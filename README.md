@@ -1,53 +1,134 @@
 # CrossSleepNet
 
-> Conformer-based Bidirectional EEG-EOG Cross-Attention for Automated Sleep Staging
+<p align="center">
+  <img src="architecture_overview.png" width="950"/>
+</p>
+
+<p align="center">
+<b>Conformer-based Bidirectional EEG–EOG Cross-Attention for Automated Sleep Staging</b>
+</p>
+
+<p align="center">
+Multimodal sleep staging framework combining EEG, EOG, cross-attention fusion,
+time-frequency encoding, and sequence-level temporal modelling.
+</p>
+
+---
+
+## Overview
+
+CrossSleepNet is a multimodal deep learning framework for automatic sleep stage
+classification using:
+
+- EEG Fpz-Cz
+- EEG Pz-Oz
+- Horizontal EOG
+
+The model follows the AASM 5-stage sleep scoring protocol:
+
+- Wake
+- N1
+- N2
+- N3
+- REM
+
+CrossSleepNet introduces a **bidirectional EEG–EOG cross-attention mechanism**
+that explicitly models neural–ocular interactions between EEG and EOG signals,
+combined with:
+
+- Conformer-based temporal encoding
+- STFT time-frequency representations
+- Sequence-level Transformer context modelling
+
+---
 
 ## Architecture
 
-CrossSleepNet v10 is a multimodal deep learning framework that jointly analyses
-EEG (Fpz-Cz, Pz-Oz) and EOG signals for automated sleep staging according to
-the AASM 5-class standard (Wake, N1, N2, N3, REM).
+### Input
 
+- Sequence length: **L = 20 epochs**
+- Epoch duration: **30 seconds**
+- Sampling frequency: **100 Hz**
+
+### Processing Pipeline
+
+```text
+EEG  (2 × 3000)   ──▶ ConformerEncoder ──┐
+                                         │
+EOG  (1 × 3000)   ──▶ ConformerEncoder ──┤
+                                         ├──▶ Bidirectional EEG-EOG Cross-Attention
+STFT (3 × 29×128) ─▶ TFImageEncoder ────┘
+                                                   │
+                                                   ▼
+                                      Level-3 multimodal fusion
+                                                   │
+                                                   ▼
+                                  Sequence Transformer over epochs
+                                                   │
+                                                   ▼
+                                   Centre-epoch sleep classification
 ```
-INPUT: sequence of L=20 consecutive 30-second epochs
 
-Per epoch
-─────────
-EEG  (2 × 3000)   ─── Level 1a ──▶  ConformerEncoder ──▶ He  (P × 128)
-EOG  (1 × 3000)   ─── Level 1b ──▶  ConformerEncoder ──▶ Hg  (P × 128)
-STFT (3 × 29×128) ─── Level 1c ──▶  TFImageEncoder   ──▶ tf  (256,)
+---
 
-Level 2  ──▶  Bidirectional EEG-EOG Cross-Attention
-              He, Hg = CrossAttn(He, Hg)
+## Core Components
 
-Level 3  ──▶  MLP fusion
-              epoch_emb = MLP( [mean(He); mean(Hg); tf] )   → (256,)
+### ConformerEncoder
 
-Level 4  ──▶  Sequence Transformer (over L epoch embeddings)
-              logits = SeqTransformer(epoch_emb_1 … epoch_emb_L)
-              → classification of centre epoch
-```
+Macaron-style Conformer blocks combining:
 
-**ConformerEncoder** (Level 1a/1b) — Macaron-style blocks combining
-depthwise conv (local ~300 ms patterns) and multi-head self-attention (global
-dependencies), with multi-scale patch tokenisation.
+- Multi-head self-attention
+- Depthwise convolution
+- Multi-scale patch tokenisation
 
-**EEGEOGCrossAttention** (Level 2) — Our core contribution. Bidirectional
-cross-attention (EEG attends to EOG, EOG attends to EEG) captures the
-physiological neural-ocular coupling that distinguishes sleep stages,
-particularly REM vs. N2.
+Designed to jointly capture:
 
-**TFImageEncoder** (Level 1c) — log₁p STFT amplitude images processed by a
-2-D CNN followed by a Transformer with a [CLS] token.
+- Local transient sleep events
+- Long-range temporal dependencies
 
-**SeqTransformer** (Level 4) — Sequence-level Transformer classifying the
-centre epoch using bidirectional context from all 20 epochs.
+---
+
+### EEG–EOG Cross-Attention
+
+The central contribution of CrossSleepNet.
+
+Bidirectional cross-attention enables:
+
+- EEG attending to EOG
+- EOG attending to EEG
+
+This allows the network to learn physiological coupling patterns associated with:
+
+- REM eye movements
+- Sleep transitions
+- Stage-dependent neuro-ocular dynamics
+
+---
+
+### TFImageEncoder
+
+Processes log-transformed STFT spectrograms using:
+
+- 2D CNN frontend
+- Transformer encoder with CLS token
+
+Captures complementary spectral structure not explicitly represented in raw temporal patches.
+
+---
+
+### Sequence Transformer
+
+Temporal Transformer operating across consecutive epochs.
+
+Uses bidirectional contextual modelling for centre-epoch prediction.
+
+---
 
 ## Results
 
 ### Sleep-EDF-78 (10-fold subject-wise CV)
 
-| Model                     |    κ   |  ±std  |  MF1   | Accuracy |
+| Model                     | κ      | ±std   | MF1    | Accuracy |
 |---------------------------|--------|--------|--------|----------|
 | CrossSleepNetV10 (full)   | 0.7527 | 0.0339 | 0.7803 | 0.8199   |
 | w/o EEG-EOG cross-attn    | 0.7371 | 0.0381 | 0.7687 | 0.8066   |
@@ -56,19 +137,11 @@ centre epoch using bidirectional context from all 20 epochs.
 
 ### Sleep-EDF-20 (10-fold subject-wise CV)
 
-| Model              |    κ   |  ±std  |  MF1   | Accuracy |
+| Model              | κ      | ±std   | MF1    | Accuracy |
 |--------------------|--------|--------|--------|----------|
 | CrossSleepNetV10   | 0.7974 | 0.0561 | 0.8256 | 0.8519   |
 
-### Literature context (Sleep-EDF-78, 78 subjects)
-
-| Method                         | Modality | ACC   | MF1   |   κ   |
-|--------------------------------|----------|-------|-------|-------|
-| AttnSleep (TNSRE 2021)         | EEG      | 82.9% | 0.778 | 0.774 |
-| XSleepNet2 (TPAMI 2021)        | EEG      | 84.0% | 0.781 | 0.778 |
-| SleepTransformer (TBME 2022)   | EEG      | 84.9% | 0.788 | 0.789 |
-| L-SeqSleepNet (JBHI 2023)      | EEG      | ~85.4%| ~0.800| ~0.800|
-| CrossFusionSleepNet (BSPC 2025)| EEG+EOG  | 87.5% | 0.830 | ~0.830|
+---
 
 ## Installation
 
@@ -76,37 +149,55 @@ centre epoch using bidirectional context from all 20 epochs.
 pip install -r requirements.txt
 ```
 
-## Data
+## Dataset
 
-Download Sleep-EDF Expanded (cassette study) from PhysioNet:
+Download Sleep-EDF Expanded from PhysioNet:
 
-```
+```text
 https://physionet.org/content/sleep-edfx/1.0.0/
 ```
 
-The expected file naming convention is `*PSG.edf` and `*Hypnogram.edf` in a
-flat directory. The preprocessing pipeline handles the full Sleep-EDF-78 (SC*)
-and Sleep-EDF-20 (SC40* first recordings) subsets automatically.
+Expected files:
+
+- `*PSG.edf`
+- `*Hypnogram.edf`
+
+Supported subsets:
+
+- Sleep-EDF-78
+- Sleep-EDF-20
+
+---
 
 ## Training
 
+### Sleep-EDF-78
+
 ```bash
-# Full 10-fold CV on Sleep-EDF-78
 python train.py --data_dir /path/to/sleep-edf --dataset edf78
-
-# Sleep-EDF-20
-python train.py --data_dir /path/to/sleep-edf --dataset edf20
-
-# Custom output directory
-python train.py --data_dir /path/to/sleep-edf --output_dir ./my_outputs
-
-# Ablation study (all four models)
-python train.py --data_dir /path/to/sleep-edf \
-    --models CrossSleepNetV10 CrossSleepNetV10_NoCross CrossSleepNetV10_NoTF SeqTrans-EEG
 ```
 
-Training automatically resumes from an existing checkpoint in `--output_dir`.
-The checkpoint JSON is saved after every fold.
+### Sleep-EDF-20
+
+```bash
+python train.py --data_dir /path/to/sleep-edf --dataset edf20
+```
+
+### Custom output directory
+
+```bash
+python train.py --data_dir /path/to/sleep-edf --output_dir ./my_outputs
+```
+
+### Ablation study
+
+```bash
+python train.py --data_dir /path/to/sleep-edf \
+    --models CrossSleepNetV10 CrossSleepNetV10_NoCross \
+             CrossSleepNetV10_NoTF SeqTrans-EEG
+```
+
+---
 
 ## Evaluation
 
@@ -115,37 +206,44 @@ python evaluate.py --checkpoint results/v10_checkpoint.json
 ```
 
 Outputs:
-- Per-fold metrics table (κ, MF1, accuracy)
+
+- Per-fold metrics
 - Mean ± std summary
-- Per-class F1 breakdown
-- `confusion_matrices.png` in the same directory
+- Per-class F1
+- Confusion matrices
 
-## Repository structure
+---
 
-```
+## Repository Structure
+
+```text
 CrossSleepNet/
-├── config.py              # All hyperparameters and constants
-├── train.py               # Training script (10-fold CV)
-├── evaluate.py            # Evaluation from checkpoint JSON
+├── config.py
+├── train.py
+├── evaluate.py
 ├── requirements.txt
+├── architecture_overview.png
 ├── models/
-│   ├── conformer.py       # ConformerBlock, ConformerEncoder
-│   ├── cross_attention.py # EEGEOGCrossAttention
-│   ├── tf_encoder.py      # TFImageEncoder
-│   └── crosssleepnet.py   # Full model + ablations + factory
 ├── data/
-│   ├── preprocessing.py   # EDF loading, filtering, STFT
-│   └── dataset.py         # SequenceDataset (float16 storage)
 ├── utils/
-│   ├── metrics.py         # κ, MF1, accuracy, per-class F1
-│   └── training.py        # LabelSmoothCE, train_fold, evaluate
-└── results/               # Place checkpoint JSON files here
+└── results/
 ```
+
+---
 
 ## Citation
 
-*To be updated after publication.*
+```bibtex
+@article{crosssleepnet2026,
+  title={CrossSleepNet: Bidirectional EEG-EOG Cross-Attention for Automated Sleep Staging},
+  author={Your Name},
+  journal={Under Review},
+  year={2026}
+}
+```
+
+---
 
 ## License
 
-MIT
+MIT License
