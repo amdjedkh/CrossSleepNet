@@ -236,7 +236,7 @@ CrossSleepNet/
 ```bibtex
 @article{crosssleepnet2026,
   title={CrossSleepNet: Bidirectional EEG-EOG Cross-Attention for Automated Sleep Staging},
-  author={Your Name},
+  author={Amdjed Khelifi},
   journal={Under Review},
   year={2026}
 }
